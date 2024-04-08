@@ -43,14 +43,14 @@ export default class XoppPlugin extends Plugin {
      * A pdf filename will have the form: path_to_xopp_xoppfilename.xopp.pdf
      * @param xoppFile
      */
-    async getPdfPath(xoppFile: TFile): Promise<string> {
+    async getPdfFile(xoppFile: TFile): Promise<TFile|null> {
         const pdfPath = `${this.settings.importedPath}/preview/${xoppFile.path.replace(/\/|\\/, '_')}.pdf`;
 
         if (await this.app.vault.adapter.exists(pdfPath)) {
             const pdfMTime: number = (await this.app.vault.adapter.stat(pdfPath))?.mtime ?? 0;
 
             // if the pdf exists and has very similar modified date as xopp file just return the path and do nothing
-            if (pdfMTime - xoppFile.stat.mtime > 10) return pdfPath;
+            if (pdfMTime - xoppFile.stat.mtime > 10) return this.app.vault.getFileByPath(pdfPath);
         }
         
         // try to create directory
@@ -58,9 +58,12 @@ export default class XoppPlugin extends Plugin {
 
         const vaultPath = this.getAbsoluteVaultPath();
 
-        exec(`xournalpp -p ${vaultPath}/${pdfPath} ${vaultPath}/${xoppFile.path}`);
-
-        return pdfPath;
+        return new Promise((resolve) => {
+            spawn('xournalpp', ['-p', `${vaultPath}/${pdfPath}`, `${vaultPath}/${xoppFile.path}`])
+                .on('close', () => {
+                    resolve(this.app.vault.getFileByPath(pdfPath));
+                });
+        })
     }
 
     async loadSettings() {
@@ -81,7 +84,7 @@ export default class XoppPlugin extends Plugin {
         if (matches?.length) {
             let path = matches[0];
 
-            // if not on Windows, add a Slash before path
+            // if not on Windows, add a slash before path
             if (!path.match(/^[A-Z]:/)) {
                 path = '/' + path;
             }
